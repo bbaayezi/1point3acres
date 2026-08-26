@@ -1,6 +1,9 @@
 name: Daily check-in
 
 on:
+  schedule:
+    # Safely after Los Angeles midnight throughout DST changes.
+    - cron: "17 9 * * *"
   workflow_dispatch:
     inputs:
       dry_run:

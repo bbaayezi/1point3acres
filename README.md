@@ -162,9 +162,8 @@ owned by the runner account. Do not put cookies in Actions cache or upload them 
 Only sanitized pending-question reports are uploaded, with seven-day retention. Passwords, cookies,
 CSRF values, and CAPTCHA tokens are never included.
 
-After multiple successful manual dry-runs and controlled live runs, a `schedule` trigger can be
-added. Keep `workflow_dispatch` for recovery and testing, and schedule away from the start of an
-hour to reduce GitHub Actions delays.
+The workflow runs daily at `09:17 UTC`, safely after Los Angeles midnight throughout daylight-saving
+changes. `workflow_dispatch` remains available for recovery, dry runs, and operation-specific tests.
 
 ## Local Codex daily job
 
