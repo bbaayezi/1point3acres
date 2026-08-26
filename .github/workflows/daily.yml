@@ -1,0 +1,75 @@
+name: Daily check-in
+
+on:
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: Validate and resolve without submitting
+        required: true
+        default: true
+        type: boolean
+      operation:
+        description: Operation to run
+        required: true
+        default: all
+        type: choice
+        options:
+          - all
+          - checkin
+          - question
+
+permissions:
+  contents: read
+
+concurrency:
+  group: onepoint3acres-daily
+  cancel-in-progress: false
+
+jobs:
+  daily:
+    environment: daily
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      TWO_CAPTCHA_API_KEY: ${{ secrets.TWO_CAPTCHA_API_KEY }}
+      ONEPOINT3ACRES_COOKIE: ${{ secrets.ONEPOINT3ACRES_COOKIE }}
+      ONEPOINT3ACRES_USERNAME: ${{ secrets.ONEPOINT3ACRES_USERNAME }}
+      ONEPOINT3ACRES_PASSWORD: ${{ secrets.ONEPOINT3ACRES_PASSWORD }}
+      ONEPOINT3ACRES_USER_AGENT: ${{ vars.ONEPOINT3ACRES_USER_AGENT }}
+      ONEPOINT3ACRES_COOKIE_FILE: ${{ vars.ONEPOINT3ACRES_COOKIE_FILE || format('{0}/onepoint3acres-cookies.json', runner.temp) }}
+      ONEPOINT3ACRES_PENDING_DIRECTORY: ${{ github.workspace }}/pending-questions
+    steps:
+      - name: Check out source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Set up Python
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install project
+        run: python -m pip install .
+
+      - name: Run daily workflow
+        shell: bash
+        run: |
+          args=(run --non-interactive)
+          if [[ "${{ inputs.dry_run }}" == "true" ]]; then
+            args+=(--dry-run)
+          fi
+          if [[ "${{ inputs.operation }}" == "checkin" ]]; then
+            args+=(--checkin-only)
+          elif [[ "${{ inputs.operation }}" == "question" ]]; then
+            args+=(--question-only)
+          fi
+          onepoint3acres "${args[@]}"
+
+      - name: Upload sanitized question reports
+        if: always()
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
+        with:
+          name: pending-question-reports-${{ github.run_id }}
+          path: pending-questions/*.json
+          if-no-files-found: ignore
+          retention-days: 7

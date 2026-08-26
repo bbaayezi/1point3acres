@@ -1,4 +1,0 @@
-requests==2.22.0
-2captcha-python==1.2.1
-
-

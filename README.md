@@ -1,162 +1,182 @@
-# 1point3acres
+# 1Point3Acres daily client
 
-[一亩三分地](https://www.1point3acres.com/bbs/) 自动签到、答题
+A modernized, testable personal client for checking daily status, submitting a daily check-in,
+and reviewing the daily question bank.
 
-快速设置，无 aws 依赖，验证码自动识别，一次性设置后再无需手动操作
+> **Important:** 1Point3Acres currently prohibits unauthorized automated access in its Terms of
+> Service. Confirm that you have permission before enabling live submissions. The included GitHub
+> Actions workflow is manual-only and defaults to dry-run mode.
 
-* 程序会自动识别验证码
+## What changed
 
-* 程序会在指定的时间每天运行一次，一次配置，永远执行，设好后就再不用管
+- Python 3.12+ package and CLI instead of directory-dependent scripts.
+- Current `requests` and `2captcha-python` dependencies.
+- Cookie-first authentication with password login and interactive cookie fallback.
+- Automatic persistence of cookies received through `Set-Cookie`.
+- Explicit detection of expired sessions and Cloudflare managed edge challenges.
+- No arbitrary HTTP 200 response is treated as a successful login.
+- Unknown, changed, ambiguous, or rejected questions require human review.
+- Check-in and question failures produce nonzero exit codes.
+- Offline tests, linting, type checking, CI, and a manual Actions workflow.
+- No credential-bearing JSON file is tracked by Git.
 
-* 支持多用户签到，批量用户签到，把用户名密码加到`USERS`数组中即可
+## Install
 
-## how to use
-
-### crontab 定时运行
-
-* 注册[2captcha.com](https://2captcha.com?from=12332166) 得到 apikey 并充值(可以用支付宝)
-    <details>
-    <summary>具体操作展开查看</summary>
-    
-    ![](screenshots/2captcha.png)
-    </details>
-* 修改 configure/data.json，用你的用户名,密码,apikey替换文件中的相应字段
-
-* 安装依赖
-  以 ubuntu 为例，其他系统请用相应的方式安装依赖
-    ```bash
-    sudo /bin/bash prepare.sh
-    ```
-  
-* crontab
-    ```
-    crontab -e
-    ```
-    ```text
-    15 8 * * * cd /replace_with_path_to_repo/src && python3 service.py 2>&1 1>/tmp/1point3acres.log
-    ```
-    
-* windows替代crontab方法
-    
-    将"auto_run_windows.bat"中D:"替换为你的盘，"D:\replace_with_path_to_repo"路径替换为你的仓库路径 "。
-    
-    ```bat
-    #auto_run_windows.bat
-    D:
-    cd D:\replace_with_path_to_repo\1point3acres\src
-    python service.py 
-    pause
-    exit
-    ```
-    
-    **创建定时任务**
-    
-    ```text
-    win+R
-    输入 
-    taskschd.msc
-    ```
-    
-    以此点击“创建基本任务"->"名称"一栏输入"1potins"->下一步->勾选"每天"->自己选择启动时间->下一步->操作选择“启动程序”->点击游览找到目录下的“auto_run_windows.bat”->点击下一步->点击完成。
-    
-    ![](screenshots/win_taskschd.png)
-
-
-## Notice
-
-**签到和答题接口更新**
-
-8月3号，网站签到和答题接口更新。
-
-程序已更新，请拉取最新代码。
-
-另外，依赖 2captcha-python 升级为 1.2.1
-
-```text
-pip install --upgrade 2captcha-python
+```bash
+python3.12 -m venv .venv
+. .venv/bin/activate
+python -m pip install -e '.[dev]'
 ```
 
-2023.08.16
+Run the offline verification suite:
 
-<br>
+```bash
+ruff format --check src/onepoint3acres tests
+ruff check src/onepoint3acres tests
+mypy src/onepoint3acres
+pytest
+```
 
-**只能微信扫码登录**
+Optional read-only checks against the current public endpoints are gated separately:
 
-这段时间逐渐有账户被要求强制微信扫码登录, 导致程序失效。
+```bash
+RUN_LIVE_CONTRACT=1 pytest tests/test_live_contract.py
+```
 
-增加了直接用cookie签到和答题的方式, 需要修改配置文件configure/cookie.json，把已登录的浏览器复制的cookie 粘贴到这个文件，api key和以前一样也需要替换。
+## Configuration
 
-使用cookie.json 后，原先的data.json 就用不到了，所以不再需要配置。
+Configuration comes from environment variables. Do not store these in the repository.
 
-<details>
-<summary> 如何找到cookie， F12 打开浏览器 console -> network 标签 -> 找到 bbs/ 请求 -> 查看具体的请求头 -> 找到cookie -> 复制cookie 后面的内容 </summary>
+| Variable | Purpose |
+|---|---|
+| `ONEPOINT3ACRES_COOKIE` | Initial browser `Cookie` request header |
+| `ONEPOINT3ACRES_USERNAME` | Optional password-login username |
+| `ONEPOINT3ACRES_PASSWORD` | Optional password-login password |
+| `TWO_CAPTCHA_API_KEY` | Required only for live challenge submissions |
+| `ONEPOINT3ACRES_USER_AGENT` | Browser identity associated with the cookie; defaults to Chrome on macOS |
+| `ONEPOINT3ACRES_COOKIE_FILE` | Persistent cookie-jar location |
+| `ONEPOINT3ACRES_PENDING_DIRECTORY` | Sanitized question-review reports |
+| `ONEPOINT3ACRES_QUESTION_BANK_FILE` | Optional external question bank |
+| `ONEPOINT3ACRES_REQUEST_TIMEOUT` | Request timeout in seconds; default `20` |
+| `ONEPOINT3ACRES_DRY_RUN` | Set to `true` to prevent submissions |
 
-![](screenshots/cookie.png)
-</details>
+Use a shell secret manager or a local file outside the repository to set them. Avoid putting a
+cookie or password directly into shell history.
 
-2021.09.22
+## Resilient login and cookie refresh
 
-<br>
+Authentication follows this sequence:
 
-**为登录增加验证码**
+1. Load and validate the persisted cookie jar.
+2. Merge and validate `ONEPOINT3ACRES_COOKIE`, when supplied.
+3. Attempt username/password login when both values are configured.
+4. If login remains unavailable and the terminal is interactive, prompt for a fresh browser cookie.
+5. Validate the new cookie before saving it.
 
-由于 昨天(2021.08.25) 网站为登录页面（弹窗）增加了验证码，所以代码也需要做相应的修改。
+Cookies returned by the website are automatically merged and persisted after successful login and
+daily operations. The cookie store and its single backup use mode `0600`; their parent directory
+uses mode `0700`. Writes are atomic.
 
-修改后，每天每用户需要调用 **3次** 验证码 API(登录一次，签到一次，答题一次)，
+Cloudflare clearance cookies can be bound to the browser identity that created them. If a cookie
+validates in the browser but not in this client, set `ONEPOINT3ACRES_USER_AGENT` to that browser's
+exact user-agent string. The same value is also passed to 2captcha so challenge tokens and requests
+use a consistent browser identity.
 
-2captcha.com 充值 **3刀** 的可用天数缩减到 **300天**
+```bash
+onepoint3acres auth status
+onepoint3acres auth login
+onepoint3acres auth import-cookie
+onepoint3acres auth clear
+```
 
-2021.08.26
+An expired cookie cannot be refreshed if the website also refuses password login or requires
+WeChat. In that case, perform a browser login and run `auth import-cookie`.
 
-<br>
+## Daily operations
 
-**更新验证模块**
+Start with a read-only run:
 
-使用 [网站 2captcha.com](https://2captcha.com?from=12332166) 提供的api。
+```bash
+onepoint3acres run --dry-run
+```
 
-但是该API 收费，一亩三分地的验证码是 [reCAPTCHA v2 hard](https://2captcha.com/demo) ，对应的[收费](https://2captcha.com/2captcha-api)是 $2.99 / 1000 次请求
+After authorization and controlled live verification:
 
-如果想使用需要注册账号+充值只少3刀（单个账号可以用 500 天左右）+ 复制 apikey 替换 configure/data.json 文件中的字段
+```bash
+onepoint3acres run
+onepoint3acres run --checkin-only
+onepoint3acres run --question-only
+```
 
-2021.08.01
+Exit codes:
 
-<br>
+| Code | Meaning |
+|---:|---|
+| `0` | Success, already complete, skipped, or dry-run |
+| `1` | Network, response, or submission failure |
+| `2` | Authentication or configuration requires attention |
+| `3` | Daily question requires human review |
+| `4` | Unsupported or rejected challenge |
 
-**程序失效**
+The client deliberately does not pass a Cloudflare managed edge challenge to the standalone
+Turnstile solver. Those challenges require different browser-bound parameters and should not be
+silently treated as ordinary widgets.
 
-论坛增加了google Google reCAPTCHA 验证码，导致程序失效
+## Daily-question review
 
-部分账号被封号
+Unknown questions and changed answer options are never submitted. The client writes a sanitized,
+deduplicated report containing only the question, answer options, timestamps, and expected answer
+text.
 
-2021.07.30
+```bash
+onepoint3acres questions pending
+onepoint3acres questions approve path/to/report.json --answer 3
+```
 
-<br>
+Approval displays the selected answer and asks for confirmation. It adds the answer text—not the
+option number—to [`question_bank.json`](src/onepoint3acres/question_bank.json), because the option
+order may change. Commit the bank update with an accompanying test when possible.
 
-**Github Action 模式下** `get credit with flaresolverr` **这个workflow 有一定概率成功**
+## GitHub Actions
 
-目前我试了三次只有一次是成功的。如果想尝试可以拉下最新代码
+[`ci.yml`](.github/workflows/ci.yml) runs fully offline tests against Python 3.12, 3.13, and 3.14.
 
-2021.07.13
+[`daily.yml`](.github/workflows/daily.yml) must initially be triggered manually. Create a GitHub
+environment named `daily` and add whichever secrets are appropriate:
 
-<br>
+- `ONEPOINT3ACRES_COOKIE`
+- `ONEPOINT3ACRES_USERNAME` and `ONEPOINT3ACRES_PASSWORD`
+- `TWO_CAPTCHA_API_KEY` for a live submission
 
-**尝试了很多方法都行不通，宣布失败**
+If the cookie was captured from a browser whose identity differs from the default, also create the
+repository variable `ONEPOINT3ACRES_USER_AGENT` with that browser's exact user-agent string.
 
-但由于 cloudflare 是根据 IP 来阻挡的，所以这个程序依然可以在本地运行 
+Run it with `dry_run=true` first. GitHub-hosted runners may receive Cloudflare challenges because
+they use datacenter IP addresses. A trusted self-hosted runner is more predictable, but should only
+be used after confirming authorization.
 
-2021.07.13
+GitHub-hosted runners are ephemeral, so refreshed cookies do not survive the job. On a self-hosted
+runner, set the repository variable `ONEPOINT3ACRES_COOKIE_FILE` to a protected persistent path
+owned by the runner account. Do not put cookies in Actions cache or upload them as artifacts.
 
-<br>
+Only sanitized pending-question reports are uploaded, with seven-day retention. Passwords, cookies,
+CSRF values, and CAPTCHA tokens are never included.
 
-**目前遇到 被 cloudflare 阻挡的问题，还在修复中，修复后会更新**
+After multiple successful manual dry-runs and controlled live runs, a `schedule` trigger can be
+added. Keep `workflow_dispatch` for recovery and testing, and schedule away from the start of an
+hour to reduce GitHub Actions delays.
 
-2021.07.11
+## Local Codex daily job
 
----
+For a local recurring Codex job, keep the validated cookie jar and 2captcha key outside the
+repository under `~/.local/state/onepoint3acres/`, with directory mode `0700` and file mode `0600`.
+Install the project into `.venv`, then use the secret-safe launcher:
 
+```bash
+scripts/run_daily.sh --dry-run
+scripts/run_daily.sh
+```
 
-
-## 其他
-
-* 题目数据来自： https://github.com/eagleoflqj/p1a3_script
-
+The launcher never prints secret values. It reuses the persistent cookie jar, writes sanitized
+question-review reports beside it, and exits before requesting a CAPTCHA when the authenticated
+status endpoint reports that the day's operations are already complete.

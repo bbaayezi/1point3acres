@@ -143,3 +143,11 @@ data_self.json
 
 
 .vscode
+
+# Local 1Point3Acres credentials and runtime state
+configure/cookie.json
+configure/data.json
+cookies.json
+cookies.json.bak
+pending-questions/
+.state/
