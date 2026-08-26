@@ -36,7 +36,7 @@ jobs:
       ONEPOINT3ACRES_USERNAME: ${{ secrets.ONEPOINT3ACRES_USERNAME }}
       ONEPOINT3ACRES_PASSWORD: ${{ secrets.ONEPOINT3ACRES_PASSWORD }}
       ONEPOINT3ACRES_USER_AGENT: ${{ vars.ONEPOINT3ACRES_USER_AGENT }}
-      ONEPOINT3ACRES_COOKIE_FILE: ${{ vars.ONEPOINT3ACRES_COOKIE_FILE || format('{0}/onepoint3acres-cookies.json', runner.temp) }}
+      ONEPOINT3ACRES_COOKIE_FILE: ${{ vars.ONEPOINT3ACRES_COOKIE_FILE }}
       ONEPOINT3ACRES_PENDING_DIRECTORY: ${{ github.workspace }}/pending-questions
     steps:
       - name: Check out source
@@ -54,6 +54,9 @@ jobs:
       - name: Run daily workflow
         shell: bash
         run: |
+          if [[ -z "${ONEPOINT3ACRES_COOKIE_FILE}" ]]; then
+            export ONEPOINT3ACRES_COOKIE_FILE="${RUNNER_TEMP}/onepoint3acres-cookies.json"
+          fi
           args=(run --non-interactive)
           if [[ "${{ inputs.dry_run }}" == "true" ]]; then
             args+=(--dry-run)
